@@ -1,0 +1,3 @@
+.git/ export-ignore
+.gitattributes export-ignore
+tests/*.test.mjs export-ignore
