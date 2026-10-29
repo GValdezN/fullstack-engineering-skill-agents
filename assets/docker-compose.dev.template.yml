@@ -1,0 +1,43 @@
+# Override para desarrollo local con recarga en caliente (Hot Reloading).
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  db:
+    # Publicar puerto únicamente en localhost para depuración/herramientas locales (DBeaver, Compass, TablePlus)
+    ports:
+      - '127.0.0.1:${PG_HOST_PORT:-5433}:5432'
+
+  api:
+    build:
+      target: development
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/api:/app
+      - type: volume
+        source: api_modules
+        target: /app/node_modules
+        volume: {nocopy: true}
+    command: [sh, -ec, 'npm ci && node scripts/wait-db.mjs && node scripts/migrate.mjs && exec npm run dev']
+
+  web:
+    build:
+      target: development
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: 'true'
+      API_INTERNAL_URL: http://api:4000
+    volumes:
+      - ./apps/web:/app
+      - type: volume
+        source: web_modules
+        target: /app/node_modules
+        volume: {nocopy: true}
+      - type: volume
+        source: web_next
+        target: /app/.next
+        volume: {nocopy: true}
+    command: [sh, -ec, 'npm ci && exec npm run dev -- --hostname 0.0.0.0']
+volumes:
+  api_modules: {}
+  web_modules: {}
+  web_next: {}

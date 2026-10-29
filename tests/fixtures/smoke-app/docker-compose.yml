@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_USER: smoke
+      POSTGRES_PASSWORD: smoke_qa_only
+      POSTGRES_DB: smoke
+    volumes: [db_data:/var/lib/postgresql/data]
+    networks: [data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U smoke -d smoke']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  api:
+    build: ./apps/api
+    environment:
+      DATABASE_URL: postgresql://smoke:smoke_qa_only@db:5432/smoke
+    networks: [edge, data]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    init: true
+    stop_grace_period: 30s
+  web:
+    build: ./apps/web
+    ports: ['127.0.0.1::3000']
+    networks: [edge]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    init: true
+  browser:
+    build: ./qa
+    profiles: [test]
+    environment:
+      CASE_TEXT: ${CASE_TEXT:-smoke-browser}
+    networks: [edge]
+networks:
+  edge: {}
+  data: {internal: true}
+volumes:
+  db_data: {}

@@ -1,0 +1,45 @@
+# Copiar a .github/workflows/ci.yml y adaptar comandos/runner a scripts reales.
+name: verify
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Configurar en variables del repositorio una imagen Node mantenida y fijada.
+      NODE_IMAGE: ${{ vars.NODE_IMAGE }}
+      COMPOSE_PROJECT_NAME: ci_qa
+    steps:
+      - uses: actions/checkout@v4
+      # qa-init.mjs usa APIs nativas, crea .env.qa sin imprimir secretos.
+      # Bootstrap fuera de Compose: evita interpolar .env.qa antes de que exista.
+      # El QA debe tener tools/integration/e2e y montar reportes en ./qa/artifacts.
+      - name: Prepare isolated QA
+        run: |
+          test -n "$NODE_IMAGE"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace "$NODE_IMAGE" node scripts/qa-init.mjs
+          docker compose --env-file .env.qa -f docker-compose.qa.yml config --quiet
+      - name: Lint, native tests and build
+        run: |
+          docker compose --env-file .env.qa -f docker-compose.qa.yml run --rm tools npm run lint
+          docker compose --env-file .env.qa -f docker-compose.qa.yml run --rm tools npm run test:unit
+          docker compose --env-file .env.qa -f docker-compose.qa.yml run --rm tools npm run test:module
+          docker compose --env-file .env.qa -f docker-compose.qa.yml run --rm tools npm run build
+      - name: Build and start QA stack
+        run: docker compose -p ci_qa --env-file .env.qa -f docker-compose.qa.yml up --build -d --wait web api db
+      - name: Integration and browser E2E
+        run: |
+          docker compose -p ci_qa --env-file .env.qa -f docker-compose.qa.yml run --rm integration
+          docker compose -p ci_qa --env-file .env.qa -f docker-compose.qa.yml run --rm e2e
+      - name: Preserve sanitized test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-reports
+          path: qa/artifacts/
+          if-no-files-found: warn
+      - name: Stop QA, preserve named volumes
+        if: always()
+        run: docker compose -p ci_qa --env-file .env.qa -f docker-compose.qa.yml down

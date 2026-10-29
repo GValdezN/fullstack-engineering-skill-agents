@@ -1,0 +1,58 @@
+# Dependencias y cachés locales
+node_modules
+.npm
+.yarn
+.pnpm-store
+
+# Salidas de compilación y empaquetado
+.next
+out
+dist
+build
+coverage
+*.tsbuildinfo
+
+# Secretos y variables de entorno reales
+.env*
+**/.env*
+!.env.example
+!**/.env.example
+!.env*.example
+!**/.env*.example
+*.pem
+*.key
+*.cert
+
+# Control de versiones y configuración de IDE
+.git
+.gitignore
+.gitattributes
+.github
+.gitlab
+.vscode
+.idea
+*.DS_Store
+Thumbs.db
+
+# Logs y trazas de depuración
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# Archivos temporales y reportes de pruebas
+tmp
+temp
+*.swp
+*.swo
+test-results
+playwright-report
+blob-report
+
+# Datos locales y respaldos
+data
+backups
+*.dump
+*.sql.gz

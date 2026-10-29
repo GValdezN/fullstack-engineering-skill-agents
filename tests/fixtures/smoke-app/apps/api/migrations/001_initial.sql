@@ -1,0 +1,1 @@
+CREATE TABLE notes (id UUID PRIMARY KEY, text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 200));

@@ -1,0 +1,41 @@
+# Copiar a .github/workflows/skill-validation.yml en el repositorio que contiene
+# fullstack-engineering/. Adaptar rutas si se instala con otra estructura.
+name: Skill validation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  scripts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22', '24']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Test scripts and fixture preparation
+        run: node --test fullstack-engineering/tests/templates.test.mjs fullstack-engineering/tests/smoke-preparation.test.mjs
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SMOKE_ARTIFACT_DIR: ${{ github.workspace }}/qa-artifacts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser, persistence and recovery against real PostgreSQL
+        run: node fullstack-engineering/scripts/run-smoke.mjs
+      - name: Preserve verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-smoke-report
+          path: qa-artifacts/
+          if-no-files-found: error

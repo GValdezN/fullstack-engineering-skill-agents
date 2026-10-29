@@ -1,0 +1,98 @@
+[
+  {
+    "id": "new-app",
+    "setup": "empty directory",
+    "prompt": "Usa la skill fullstack-engineering para crear un gestor de notas con Next.js, API Node.js y PostgreSQL. Debe permitir crear y listar notas, rechazar texto vacío y conservar los registros al recrear los contenedores. Entrega un arranque local con Docker Compose y verifica el flujo desde el navegador. Trabaja solo en este directorio.",
+    "acceptance": [
+      "Compose arranca desde checkout limpio",
+      "navegador crea y lista datos reales",
+      "texto vacío no escribe",
+      "datos sobreviven recreación",
+      "evidencia distingue mocks de integración",
+      "no incorpora servicios de negocio ajenos"
+    ]
+  },
+  {
+    "id": "existing-bug",
+    "setup": "node scripts/prepare-evaluation.mjs existing-bug NEW_DIRECTORY",
+    "prompt": "Usa la skill fullstack-engineering en este proyecto. POST /api/notes con JSON malformado devuelve 503; debe devolver 400 sin insertar nada. Corrige el bug y agrega una regresión. Conserva el stack, contratos y datos existentes; no agregues otras funcionalidades.",
+    "acceptance": [
+      "reproduce 503 antes de corregir",
+      "JSON malformado devuelve 400",
+      "ninguna escritura indebida",
+      "solicitud válida sigue funcionando",
+      "sin cambio de motor ni reescritura del frontend",
+      "diff acotado y evidencia final"
+    ]
+  },
+  {
+    "id": "change-database",
+    "setup": "node scripts/prepare-evaluation.mjs change-database NEW_DIRECTORY",
+    "prompt": "Usa la skill fullstack-engineering para migrar esta aplicación de PostgreSQL a MySQL. Mantén la API y la interfaz. Prepara y prueba la transferencia de notas conservando id y texto en un entorno aislado. No borres el volumen PostgreSQL original. Entrega migraciones y arranque Docker Compose reproducible.",
+    "acceptance": [
+      "no mezcla conectores o puertos de ambos motores por accidente",
+      "id y texto conservados tras transferencia real",
+      "volumen origen intacto",
+      "contratos HTTP y UI compatibles",
+      "migración repetible sin duplicados",
+      "restauración o roll-forward documentado",
+      "no declara integración MySQL a partir de mocks"
+    ]
+  },
+  {
+    "id": "function-change",
+    "setup": "node scripts/run-smoke.mjs --prepare NEW_DIRECTORY",
+    "prompt": "Usa la skill fullstack-engineering en este proyecto. Extrae una función pura normalizeNoteText(value) y úsala al crear notas. Debe aceptar solo strings, recortar espacios de los extremos y rechazar texto vacío o mayor de 200 caracteres después de recortar. Conserva POST /api/notes, sus status HTTP y el resto de la app. Implementa el cambio y verifica sus consumidores.",
+    "acceptance": [
+      "firma y errores de la función definidos",
+      "casos normales, vacío, tipo inválido y fronteras 200/201 comprobados",
+      "POST usa realmente la función y guarda texto normalizado",
+      "sin nuevas capas HTTP, bases ni reestructuración global",
+      "proceso y pruebas proporcionales; sin exigir Docker para probar lógica pura",
+      "no afirma integración HTTP/DB si solo probó la función"
+    ]
+  },
+  {
+    "id": "module-change",
+    "setup": "node scripts/run-smoke.mjs --prepare NEW_DIRECTORY",
+    "prompt": "Usa la skill fullstack-engineering para agregar un módulo de etiquetas a las notas existentes. Permite crear etiquetas, asignarlas a notas y mostrar esas etiquetas en el listado. Una etiqueta asignada dos veces no se duplica. Conserva las notas previas y las rutas actuales. Integra el módulo con la API y UI existentes y verifica el flujo.",
+    "acceptance": [
+      "responsabilidad e interfaz del módulo definidas",
+      "migración preserva notas anteriores",
+      "asignación duplicada no duplica relaciones",
+      "API y UI consumen el módulo real",
+      "nota inexistente o entrada inválida no deja escrituras parciales",
+      "pruebas del módulo y recorrido real diferenciadas",
+      "no reescribe otros módulos ni cambia el stack"
+    ]
+  },
+  {
+    "id": "external-integration",
+    "setup": "node scripts/run-smoke.mjs --prepare NEW_DIRECTORY",
+    "prompt": "Usa la skill fullstack-engineering para integrar la creación de notas con un receptor HTTP configurable, exclusivamente de QA. Envía id y texto mediante un adaptador sin bloquear indefinidamente la API. Define y documenta qué ocurre si el receptor rechaza o tarda. Prueba con un servidor HTTP local controlado; no contactes servicios públicos ni agregues reintentos automáticos sin deduplicación. Conserva las operaciones existentes.",
+    "acceptance": [
+      "contrato del adaptador y semántica del fallo explícitos",
+      "URL y secretos solo en servidor; configuración validada",
+      "timeout acotado y prueba de rechazo/timeout",
+      "efecto y consistencia de la nota verificados ante fallo parcial",
+      "servidor local de QA sin efectos externos reales",
+      "evidencia distingue integración controlada de proveedor real",
+      "no agrega SDK, colas o microservicios sin necesidad demostrada"
+    ]
+  },
+  {
+    "id": "project-conventions",
+    "setup": "node scripts/run-smoke.mjs --prepare NEW_DIRECTORY",
+    "prompt": "Usa la skill fullstack-engineering para agregar fecha de creación a las notas y mostrarla en el listado. Antes de implementar, identifica cómo se organizan y nombran el código, los contratos y los datos en este proyecto. Sigue las convenciones comprobables; si no existe un patrón para fechas o nombres compuestos, distingue tu propuesta de lo observado. Conserva los registros y nombres públicos actuales y verifica el recorrido entre base, API y UI.",
+    "acceptance": [
+      "perfil de convenciones respaldado por archivos o símbolos reales",
+      "distingue configuración/código vigente de supuestos y propuestas",
+      "conserva JavaScript y extensiones .mjs existentes en API sin migración de stack innecesaria",
+      "conserva notes, id y text y los consumidores actuales",
+      "migración versionada preserva notas previas y define tratamiento de fechas históricas sin inventar fecha real",
+      "mapeos y tipos de fecha documentados y comprobados entre SQL, API y UI",
+      "no renombra base o tablas ni reorganiza todo el proyecto por estética",
+      "no afirma inspección de DB runtime si solo leyó migraciones"
+    ]
+  }
+]
