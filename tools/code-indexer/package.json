@@ -1,0 +1,21 @@
+{
+  "name": "code-indexer",
+  "version": "0.1.0",
+  "description": "AST-based code indexer for fullstack-engineering skill",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "code-indexer": "./cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.25.1",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2"
+  }
+}
