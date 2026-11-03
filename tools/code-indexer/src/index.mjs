@@ -2,6 +2,7 @@ export class CodeIndex {
   constructor() {
     this.files = new Map();     // relativePath → { symbols, imports, exports, errors, language }
     this.allSymbols = [];       // flat list for search
+    this._cacheStats = { cached: 0, parsed: 0, skipped: 0 };
   }
 
   addFile(relativePath, extracted, meta = {}) {
@@ -14,6 +15,14 @@ export class CodeIndex {
     for (const sym of extracted.symbols) {
       this.allSymbols.push({ ...sym, file: relativePath });
     }
+  }
+
+  setCacheStats(stats) {
+    this._cacheStats = { ...stats };
+  }
+
+  cacheStats() {
+    return { ...this._cacheStats };
   }
 
   findByName(name) {
@@ -68,6 +77,6 @@ export class CodeIndex {
     for (const [path, entry] of this.files) {
       files[path] = entry;
     }
-    return { files, stats: this.stats() };
+    return { files, stats: this.stats(), cacheStats: this._cacheStats };
   }
 }

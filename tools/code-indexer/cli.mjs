@@ -1,31 +1,35 @@
 #!/usr/bin/env node
 
 import { parseArgs } from 'node:util';
-import { writeFile } from 'node:fs/promises';
-import { readFile } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { discoverFiles } from './src/discover.mjs';
 import { parseFile } from './src/parse.mjs';
 import { extractSymbols } from './src/extract.mjs';
 import { CodeIndex } from './src/index.mjs';
 import { getSnippet } from './src/snippets.mjs';
-import { getCached, setCache, clearCache } from './src/cache.mjs';
+import {
+  contentHash, loadProjectCache, saveProjectCache,
+  clearAllCaches, enforceSizeLimit,
+} from './src/cache.mjs';
 import { formatSummary, formatJSON, formatFindResults } from './src/output.mjs';
 
 function usage() {
   console.log(`code-indexer — AST-based code structure indexer
 
 Commands:
-  scan    Scan a project and output its structure
-  find    Search for a symbol by name
-  symbol  Show a specific symbol with source context
+  scan         Scan a project and output its structure
+  find         Search for a symbol by name
+  symbol       Show a specific symbol with source context
+  cache-clear  Remove all cached indices
 
 Options (scan):
   --root <path>           Project root (required)
   --format summary|json   Output format (default: summary)
   --max-symbols <n>       Limit symbols in summary
   --max-chars <n>         Limit total output characters
-  --no-cache              Skip cache
+  --no-cache              Skip cache entirely
+  --cache-max-size <mb>   Max cache size in MB (default: 50)
   --output <file>         Write output to file instead of stdout
 
 Options (find):
@@ -45,37 +49,87 @@ Examples:
 `);
 }
 
-async function buildIndex(root, useCache) {
+async function buildIndex(root, options = {}) {
+  const { useCache = true, cacheMaxSize } = options;
   const files = await discoverFiles(root);
   const index = new CodeIndex();
 
+  let cached = 0;
+  let parsed = 0;
+  let skipped = 0;
+
+  let projectCache = null;
+  if (useCache) {
+    projectCache = await loadProjectCache(root);
+    if (projectCache.stale) {
+      // version changed — discard, re-parse everything
+      projectCache.entries = new Map();
+    }
+  }
+
+  const discoveredPaths = new Set(files.map(f => f.relativePath));
+  const newEntries = new Map();
+
   for (const file of files) {
-    if (useCache) {
-      try {
-        const content = await readFile(file.path, 'utf8');
-        const cached = await getCached(file.path, content);
-        if (cached) {
-          index.addFile(file.relativePath, cached, { language: cached._language, errors: cached._errors });
+    // Check incremental cache
+    if (useCache && projectCache) {
+      const cachedEntry = projectCache.entries.get(file.relativePath);
+      if (cachedEntry) {
+        let currentContent;
+        try {
+          currentContent = await readFile(file.path, 'utf8');
+        } catch {
+          skipped++;
           continue;
         }
-      } catch {
-        // fall through to parse
+        const currentHash = contentHash(currentContent);
+        if (cachedEntry.hash === currentHash) {
+          // Cache hit
+          index.addFile(file.relativePath, cachedEntry.data, {
+            language: cachedEntry.data._language,
+            errors: cachedEntry.data._errors,
+          });
+          newEntries.set(file.relativePath, { hash: currentHash, data: cachedEntry.data });
+          cached++;
+          continue;
+        }
       }
     }
 
+    // Parse the file
     const { tree, errors, language, source } = await parseFile(file.path, file.extension);
-    if (!tree) continue;
-
-    const extracted = extractSymbols(tree, file.relativePath);
-
-    if (useCache && source) {
-      const cacheData = { ...extracted, _language: language, _errors: errors };
-      await setCache(file.path, source, cacheData);
+    if (!tree) {
+      skipped++;
+      continue;
     }
 
+    const extracted = extractSymbols(tree, file.relativePath);
     index.addFile(file.relativePath, extracted, { language, errors });
+
+    if (useCache && source) {
+      const hash = contentHash(source);
+      const cacheData = { ...extracted, _language: language, _errors: errors };
+      newEntries.set(file.relativePath, { hash, data: cacheData });
+    }
+
+    parsed++;
   }
 
+  // Persist the updated cache (only files that still exist on disk)
+  if (useCache && newEntries.size > 0) {
+    try {
+      await saveProjectCache(root, newEntries);
+      if (cacheMaxSize != null) {
+        await enforceSizeLimit(cacheMaxSize * 1024 * 1024);
+      } else {
+        await enforceSizeLimit();
+      }
+    } catch {
+      // cache save failure is non-fatal
+    }
+  }
+
+  index.setCacheStats({ cached, parsed, skipped });
   return index;
 }
 
@@ -88,6 +142,7 @@ async function cmdScan(args) {
       'max-symbols': { type: 'string' },
       'max-chars': { type: 'string' },
       'no-cache': { type: 'boolean', default: false },
+      'cache-max-size': { type: 'string' },
       output: { type: 'string' },
     },
     strict: true,
@@ -100,7 +155,8 @@ async function cmdScan(args) {
 
   const root = resolve(values.root);
   const useCache = !values['no-cache'];
-  const index = await buildIndex(root, useCache);
+  const cacheMaxSize = values['cache-max-size'] ? Number(values['cache-max-size']) : undefined;
+  const index = await buildIndex(root, { useCache, cacheMaxSize });
 
   let result;
   if (values.format === 'json') {
@@ -136,7 +192,7 @@ async function cmdFind(args) {
   }
 
   const root = resolve(values.root);
-  const index = await buildIndex(root, true);
+  const index = await buildIndex(root);
   const results = index.findByName(values.name);
   console.log(formatFindResults(results));
 }
@@ -159,7 +215,7 @@ async function cmdSymbol(args) {
   }
 
   const root = resolve(values.root);
-  const index = await buildIndex(root, true);
+  const index = await buildIndex(root);
   const fileSymbols = index.findByFile(values.file);
   const match = fileSymbols.find(s => s.name === values.name);
 
@@ -203,7 +259,7 @@ switch (command) {
   case 'find':  await cmdFind(rest); break;
   case 'symbol': await cmdSymbol(rest); break;
   case 'cache-clear':
-    await clearCache();
+    await clearAllCaches();
     console.log('Cache cleared.');
     break;
   case '--help': case '-h': case undefined:

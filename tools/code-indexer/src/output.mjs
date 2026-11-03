@@ -1,6 +1,7 @@
 export function formatSummary(index, options = {}) {
   const { maxSymbols = Infinity, maxChars = Infinity } = options;
   const stats = index.stats();
+  const cs = index.cacheStats();
   const lines = [];
   let symbolCount = 0;
   let truncated = false;
@@ -45,6 +46,9 @@ export function formatSummary(index, options = {}) {
   }
 
   result += `\nTRUNCATED=${truncated} SYMBOLS_SHOWN=${symbolCount}`;
+  if (cs.cached || cs.parsed || cs.skipped) {
+    result += ` CACHED=${cs.cached} PARSED=${cs.parsed} SKIPPED=${cs.skipped}`;
+  }
   return result;
 }
 
