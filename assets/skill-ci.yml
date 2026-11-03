@@ -1,5 +1,6 @@
-# Copiar a .github/workflows/skill-validation.yml en el repositorio que contiene
-# fullstack-engineering/. Adaptar rutas si se instala con otra estructura.
+# Plantilla para repositorios donde la skill está en una subcarpeta
+# fullstack-engineering/. Para la skill como raíz del repositorio, usar
+# .github/workflows/skill-validation.yml (ya incluido con rutas corregidas).
 name: Skill validation
 on: [push, pull_request, workflow_dispatch]
 permissions:

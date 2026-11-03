@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdtemp, rm, readFile, readdir, writeFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -34,4 +34,22 @@ test('bug evaluation produces faulty source in isolated checkout',async t=>{
  const source=await readFile(join(dir,'apps/api/server.mjs'),'utf8');
  assert(source.includes("catch{throw new Error('invalid JSON')}"));
  assert(!source.includes("catch{return reply(400,{error:'invalid JSON'})}"));
+});
+test('smoke test returns BLOCKED with exit 2 when docker is not found',async t=>{
+ const artifactDir=join(await workspace(t),'reports');
+ const smokeScript=fileURLToPath(new URL('../scripts/run-smoke.mjs',import.meta.url));
+ const emptyDir=join(await workspace(t),'empty-path');
+ const {mkdir}=await import('node:fs/promises');
+ await mkdir(emptyDir,{recursive:true});
+ const nodeDir=dirname(process.execPath);
+ const pathSep=process.platform==='win32'?';':':';
+ const r=spawnSync(process.execPath,[smokeScript],{
+  encoding:'utf8',timeout:30000,
+  env:{...process.env,PATH:emptyDir+pathSep+nodeDir,SMOKE_ARTIFACT_DIR:artifactDir}
+ });
+ assert.equal(r.status,2,`Expected exit 2, got ${r.status}; stderr: ${r.stderr}`);
+ assert.match(r.stderr,/BLOCKED/);
+ const files=await readdir(artifactDir);
+ const report=JSON.parse(await readFile(join(artifactDir,files[0]),'utf8'));
+ assert.equal(report.status,'BLOCKED');
 });

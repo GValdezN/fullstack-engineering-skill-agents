@@ -5,7 +5,7 @@
 - Aislamiento antes de ejecutar
 - Migraciones y entrega
 - Observabilidad y privacidad
-- Metodología de orquestación con Docker Compose (Frontend, Backend y Persistencia)
+- Orquestación con Docker Compose
 - Puertos sin colisiones y Windows/WSL
 - Señales y apagado ordenado
 - Operación con evidencia y reanudación
@@ -37,95 +37,51 @@ Distinguir liveness de readiness. Registrar request/correlation ID, estado y err
 
 Mantener un estado actual breve con evidencia y una bitácora fechada cuando la tarea lo requiera. Marcar datos históricos supersedidos y separar hechos observados de hipótesis. Una sesión abierta o una marca de modificación no demuestra trabajo continuo ni validación ejecutada.
 
-## Metodología de orquestación con Docker Compose (Frontend, Backend y Persistencia)
+### Request ID para correlación
 
-### 1. Topología de red y aislamiento perimetral
+Generar un ID único por request al inicio del middleware chain y propagarlo en headers de respuesta y logs:
 
-- **Red privada dedicada:** Orquestar los servicios (`web`, `api`, base de datos y auxiliares) dentro de una red bridge interna propia del proyecto (ej. `internal_net`). Esto habilita resolución DNS automática por nombre de servicio (`http://api:4000`, `db:5432`) sin exponer nombres ni puertos al exterior.
-- **Mínimo privilegio de puertos:**
-  - El frontend local publica solo loopback, por ejemplo `127.0.0.1:${WEB_HOST_PORT:-3100}:3000`. Exposición LAN/pública requiere configuración explícita.
-  - La API backend, base de datos y servicios auxiliares **no deben** exponerse a interfaces públicas (`0.0.0.0`). Si se requiere acceso para depuración o herramientas locales de desarrollo/QA, atar explícitamente a localhost: `127.0.0.1:${API_PORT:-4000}:4000` y `127.0.0.1:${DB_PORT:-5433}:5432`.
-- **Integración con host (Host Gateway):** Cuando un contenedor requiera consumir servicios auxiliares que corren directamente en la máquina anfitriona fuera de Docker, configurar `extra_hosts: ["host.docker.internal:host-gateway"]`.
+```javascript
+function requestId(req, res, next) {
+  req.id = crypto.randomBytes(6).toString('hex');
+  res.setHeader('X-Request-Id', req.id);
+  next();
+}
+```
 
-### 2. Construcción multi-etapa (Multi-Stage) y empaquetado seguro
+Incluir el request ID en todas las entradas de log, errores y respuestas de error para correlación end-to-end. Si hay servicios downstream, propagar el ID como header.
 
-Diseñar Dockerfiles independientes para frontend y backend con separación estricta entre compilación y ejecución:
+### NDJSON para logging estructurado
 
-- **Backend (Node.js API):**
-  - *Etapa Build:* Imagen base de compilación (`node:<version>-bookworm-slim` o `alpine`), instalación determinista de dependencias completas (`npm ci`), generación de esquemas/clientes de persistencia (ej. ORM/ODM) y compilación TypeScript (`npm run build`).
-  - *Etapa Runtime:* Imagen base mínima/slim. Copiar únicamente artefactos compilados (`dist/`), archivos de definición (`package.json`, lockfile) y dependencias de producción (`npm ci --omit=dev` o `node_modules` de producción).
-  - *Seguridad:* Ejecutar siempre bajo un usuario sin privilegios (`USER node`), nunca como root.
-  - *Volúmenes persistentes:* Usar volúmenes nombrados para archivos subidos o generados con permisos explícitos de usuario.
-  - *Script de entrada (`docker-entrypoint.sh`):*
-    1. Comprobar disponibilidad de la base de datos antes de proceder.
-    2. Ejecutar migraciones automáticas no destructivas (`migrate deploy` o equivalente).
-    3. Ejecutar semillas sintéticas idempotentes si el entorno lo exige.
-    4. Traspasar el control al proceso Node mediante `exec node dist/main.js` para propagar señales de terminación (`SIGTERM`, `SIGINT`) y permitir un apagado ordenado.
+Para operaciones asíncronas, sincronizaciones y procesos batch, usar Newline-Delimited JSON (un evento JSON por línea):
 
-- **Frontend (Next.js / SSR):**
-  - *Etapa Build:* Instalar dependencias, inyectar variables públicas requeridas en compilación (`NEXT_PUBLIC_*`), compilar Next.js en modo standalone (`output: 'standalone'` en `next.config.js`). Esto genera un bundle autónomo con el servidor web mínimo necesario, reduciendo drásticamente el peso de la imagen al incluir solo las dependencias de Node indispensables.
-  - *Etapa Runtime:* Imagen ligera (`node:<version>-alpine`), copiar `package.json`, `.next/standalone`, carpetas `.next/static` y `public`. Ejecutar como usuario sin privilegios `USER node` con comando `node server.js` o script de entrada.
+```javascript
+function logEvent(stream, event) {
+  stream.write(JSON.stringify({ ...event, ts: new Date().toISOString() }) + '\n');
+}
+```
 
-### 2.1. Entrypoints mínimos y Standalone
+Facilita análisis con herramientas estándar (`jq`, `grep`), agregación en sistemas de logs y parsing programático. Nombrar archivos con timestamp del inicio de la operación. No mezclar logs estructurados con `console.log` sin formato en la misma salida.
 
-Usar por defecto APIs nativas `node:crypto`, `node:fs`, `node:http` y `node:net` en entrypoints, readiness y healthchecks. Los scripts auxiliares no deben depender accidentalmente del árbol del build. Mantener migraciones y seeds de dominio en la API Node.js, que instala explícitamente sus dependencias productivas; `serverExternalPackages` solo pertenece a Next.js.
+### Dry-run para operaciones administrativas
 
-En un auxiliar dentro de Next standalone, permitir conectores necesarios declarados en dependencies y externalizados cuando corresponda. `serverExternalPackages` evita bundling, pero NO garantiza por sí solo que un script no trazado y sus dependencias transitivas aparezcan en la imagen. Incluirlos mediante tracing/copia o instalación productiva específica y ejecutar import/resolución y el propio auxiliar dentro de la imagen final, sin mounts ni node_modules del host. Copiar scripts, SQL y manifiestos con permisos correctos. Probar CJS/ESM y extensiones de imports del artefacto real.
+Implementar un modo preview para operaciones destructivas o masivas:
 
-No reemplazar hashing seguro por un hash rápido para eliminar dependencias. Hashes precalculados solo para fixtures estáticas sintéticas y algoritmos/parámetros compatibles; nunca credenciales productivas comunes ni contraseñas en claro en logs. Para bootstrap real generar/recibir una contraseña única y usar el algoritmo seguro del sistema.
+```javascript
+router.post('/admin/sync', requireAdmin, async (req, res) => {
+  const apply = req.query.apply === '1';
+  const plan = await computeSyncPlan();
+  if (!apply) return res.json({ mode: 'dry-run', plan });
+  const result = await executeSyncPlan(plan);
+  res.json({ mode: 'applied', result });
+});
+```
 
-### 3. Conexión de servicios: Patrón de Mismo Origen (Same-Origin via Rewrites)
+Sin el flag explícito (`?apply=1`), la operación solo muestra qué haría. Para operaciones irreversibles extremas, usar un token de confirmación (ej. `?confirm=BORRAR-TODO`) como safety gate adicional. Proteger la ruta de ejecución con autorización estricta (admin o localhost-only).
 
-En lugar de que el navegador del cliente consulte directamente la API en otro puerto o dominio (lo que obligaría a habilitar CORS permisivo, expondría el puerto de la API y complicaría las cookies de sesión):
+## Orquestación con Docker Compose
 
-- **Proxy Inverso en Frontend:** Configurar reescrituras de rutas en el servidor de frontend (ej. `rewrites()` en `next.config.js`):
-  ```javascript
-  const API_INTERNAL_URL = process.env.API_INTERNAL_URL || 'http://api:4000';
-
-  module.exports = {
-    output: 'standalone',
-    async rewrites() {
-      return [
-        {
-          source: '/api/:path*',
-          destination: `${API_INTERNAL_URL}/api/:path*`,
-        },
-      ];
-    },
-  };
-  ```
-- **Inyección por entorno en Docker Compose:** Para rewrites de next.config resueltos al compilar, suministrar durante el build (reiniciar con una variable distinta no reescribe las rutas compiladas). Si se necesita configuración runtime, implementar y probar un proxy runtime. Suministrar la dirección interna en la red de Docker:
-  ```yaml
-  services:
-    web:
-      build:
-        args:
-          API_INTERNAL_URL: http://api:4000
-  ```
-- **Ventajas críticas:**
-  1. **Cero CORS para la web:** Para el navegador, todas las llamadas van a `http://<host-web>/api/...`. El servidor frontend las retransmite internamente a `api:4000`.
-  2. **Cookies seguras de primer origen:** Las cookies de sesión pueden configurarse como `HttpOnly`, `Secure` y `SameSite=Strict`, reduciendo exposición a CSRF sin reemplazar validación de Origin/token según la operación y evitando el bloqueo de cookies de terceros en navegadores modernos.
-  3. **Aislamiento perimetral:** El puerto del backend no necesita estar abierto a Internet; solo es alcanzable dentro de la red interna de contenedores.
-
-### 4. Orquestación y arranque determinista (Healthcheck Chaining)
-
-No utilizar esperas basadas en temporizadores ciegos ni suposiciones de tiempo. Implementar una cadena de salud basada en readiness comprobada:
-
-1. **Persistencia (DB):**
-   - Healthcheck nativo (`test: ["CMD-SHELL", "...ping/isready..."]`).
-   - Intervalos, timeouts y reintentos definidos (`interval: 5s`, `timeout: 5s`, `retries: 5`, `start_period: 10s`).
-2. **Backend API:**
-   - Dependencia condicionada: `depends_on: { db: { condition: service_healthy } }`.
-   - Endpoint `/health` o `/api/health` en la API que compruebe la conectividad real con la base de datos antes de devolver HTTP 200.
-   - Healthcheck en Compose: un script nativo con `fetch(url, { signal: AbortSignal.timeout(2500) })`, comprobación de status y `.catch(() => process.exit(1))`; usar un Node compatible y timeout Compose mayor al de la consulta.
-3. **Frontend Web:**
-   - Dependencia condicionada: `depends_on: { api: { condition: service_healthy } }`.
-   - Healthcheck propio que verifique respuesta del servidor HTTP.
-   - Ordena el inicio para que la primera comprobación espere readiness; después del arranque deben manejarse caídas/reconexiones y readiness degradada.
-
-### 5. Una sola plantilla canónica
-
-Usar [docker-compose.template.yml](../assets/docker-compose.template.yml) y la guía [docker-compose.md](docker-compose.md). Completar rutas, scripts e imágenes para cada proyecto y comprobar la configuración efectiva. El Compose base no publica DB/API. La exposición de depuración se añade mediante override opt-in con puertos loopback desplazados; así la guía y la plantilla comparten el mismo contrato.
+Para la metodología completa de construcción, red, healthchecks, same-origin y plantillas, leer [docker-compose.md](docker-compose.md). Esta sección cubre principios operativos complementarios, no repetidos allí.
 
 ## Puertos sin colisiones y Windows/WSL
 

@@ -94,6 +94,88 @@ Usar volúmenes nombrados para DB y uploads u otros datos durables. No guardar u
 
 En proxy compartido, añadir únicamente el vhost/red del proyecto autorizado; no hacer depender el arranque del proxy de todas las apps. Validar sintaxis y comportamiento cuando un upstream falta o cambia IP. Confiar en cabeceras de proxy solo desde proxies conocidos y revisar cookies/URLs/rate limits bajo HTTPS.
 
+### Multi-compose por ambiente
+
+Para proyectos con necesidades distintas entre ambientes, usar composición de archivos:
+
+```text
+docker-compose.yml          — Base: servicios, redes, volúmenes, healthchecks, env vars
+docker-compose.dev.yml      — Override: bind mounts, modo dev, puertos extra de debug
+docker-compose.prod.yml     — Override: restart:always, builds finales, sin herramientas dev
+docker-compose.test.yml     — Override: DB aislada, fixtures, runners de test
+```
+
+Invocar con: `docker compose -f docker-compose.yml -f docker-compose.<env>.yml --env-file .env.<env> up`. El base define la estructura; cada override solo ajusta lo necesario para su ambiente. Agregar scripts npm para cada combinación habitual.
+
+### Redes segmentadas por seguridad
+
+Cuando un servicio no necesita comunicarse directamente con todos los demás, separar en redes:
+
+```yaml
+networks:
+  web:     # frontend + backend + proxy
+  data:    # backend + DB
+  worker:  # backend + servicio auxiliar
+```
+
+Un servicio solo ve los contenedores de sus redes. No conectar la DB a la red del frontend; no exponer servicios auxiliares al tráfico público.
+
+### Nginx como reverse proxy en Docker
+
+Para servir frontend estático y proxy al backend en un solo puerto:
+
+```nginx
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+location / {
+    set $frontend http://frontend:80;
+    proxy_pass $frontend;
+}
+location /api/ {
+    set $backend http://backend:4000;
+    proxy_pass $backend;
+    proxy_read_timeout 210s;
+}
+location /socket.io/ {
+    set $backend http://backend:4000;
+    proxy_pass $backend;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+- Usar el resolver DNS interno de Docker (`127.0.0.11`) con `valid=10s` para re-resolver cuando un contenedor se recrea.
+- Variables `$upstream` fuerzan la re-resolución; un `proxy_pass` literal se resuelve una vez al arrancar Nginx.
+- Timeout del proxy mayor que el timeout de la aplicación, para que los errores vengan del backend, no de Nginx.
+- `X-Accel-Buffering: no` para SSE; headers de upgrade para WebSocket.
+
+### Servicios polyglot (Python u otros junto a Node)
+
+Para servicios auxiliares en otro runtime (exportación Excel, procesamiento de documentos, IA):
+
+- Definir como servicio adicional con su propio Dockerfile, healthcheck y red.
+- Comunicación HTTP interna entre contenedores por DNS de servicio.
+- Si el servicio usa Chromium u otro recurso pesado, asignar `shm_size` y recursos adecuados.
+- Ejecutar como usuario no-root dentro del contenedor (`USER app`).
+- No sustituir la API principal por el servicio auxiliar; el backend Node.js sigue siendo el punto de entrada.
+
+### Alternativa sin Docker: PM2
+
+Si Docker no está disponible o el despliegue es en servidor tradicional, PM2 puede gestionar los procesos Node.js:
+
+```javascript
+// ecosystem.config.js
+module.exports = {
+  apps: [
+    { name: 'api', script: 'src/server.js', env_production: { NODE_ENV: 'production' } },
+    { name: 'web', script: 'node_modules/.bin/next', args: 'start' },
+  ],
+};
+```
+
+PM2 no reemplaza Docker para aislamiento, reproducibilidad ni gestión de base de datos. Documentar como alternativa solo cuando sea un requisito explícito.
+
 ## 7. Verificación obligatoria
 
 Registrar cada gate separadamente en [el registro de verificación](../assets/verification-record.md):

@@ -35,7 +35,7 @@ function run(command,args,{cwd,input,timeout=240000,allowFailure=false}={}) {
     const timer=setTimeout(()=>{expired=true;child.kill('SIGKILL')},timeout);
     child.stdout.on('data',v=>{stdout+=v;if(stdout.length>16*1024*1024)child.kill('SIGKILL')});
     child.stderr.on('data',v=>{stderr+=v;if(stderr.length>16*1024*1024)child.kill('SIGKILL')});
-    child.once('error',e=>{clearTimeout(timer);reject(e)});
+    child.once('error',e=>{clearTimeout(timer);if(allowFailure)resolve({code:null,stdout,stderr,spawnError:e});else reject(e)});
     child.once('close',code=>{
       clearTimeout(timer);
       if(expired || (code!==0 && !allowFailure)) reject(new Error(`${command} ${args.slice(0,2).join(' ')} failed (exit ${code}, timeout ${expired}); raw output withheld`));
@@ -59,7 +59,7 @@ export async function smoke() {
   let touched=false;
   try {
     const daemon=await run('docker',['info','--format','{{.ServerVersion}}'],{allowFailure:true,timeout:15000});
-    if(daemon.code!==0){report.status='BLOCKED';throw new Error('Docker daemon unavailable; configure access and rerun')}
+    if(daemon.spawnError||daemon.code!==0){report.status='BLOCKED';throw new Error(daemon.spawnError?.code==='ENOENT'?'Docker executable not found; install Docker and rerun':'Docker daemon unavailable; configure access and rerun')}
     report.dockerVersion=daemon.stdout.trim();
     await prepare(cwd);
     await gate('static-delivery',()=>run(process.execPath,[join(skill,'scripts/check-delivery.mjs'),cwd]));

@@ -52,6 +52,89 @@ El destino de estos rewrites se fija durante `next build`; suministrar `API_INTE
 
 Sin `output: 'standalone'`, el comando `npm run build` no generará la carpeta `.next/standalone` y la compilación Docker fallará con error `directory .next/standalone not found`. Usar [next.config.template.mjs](../assets/next.config.template.mjs). Además, este snippet implementa el patrón Same-Origin mediante `rewrites`, permitiendo que el navegador llame a `/api/...` sin lidiar con CORS complejas ni exponer el DNS interno de Docker.
 
+## Cliente API tipado y centralizado
+
+Encapsular todas las llamadas HTTP en un módulo con helpers genéricos y métodos por recurso:
+
+```typescript
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...options,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-App-CSRF': '1', ...options?.headers },
+  });
+  if (res.status === 401) { redirect('/login'); throw new ApiError(401, 'UNAUTHORIZED'); }
+  if (!res.ok) throw await ApiError.fromResponse(res);
+  return res.json();
+}
+
+// Métodos por recurso como namespaces
+export const tickets = {
+  list: (params) => api<Ticket[]>(`/api/tickets?${qs(params)}`),
+  create: (data) => api<Ticket>('/api/tickets', { method: 'POST', body: JSON.stringify(data) }),
+};
+```
+
+- Redirect automático a login en 401.
+- CSRF header automático en mutaciones.
+- `credentials: 'same-origin'` para cookies httpOnly.
+- No duplicar lógica de fetch en cada componente.
+- Para Axios: interceptor de request para Bearer token, interceptor de response para errores.
+
+### Custom hooks por recurso REST
+
+Cuando se use react-query o similar, crear un hook por recurso que encapsule queries y mutations:
+
+```javascript
+function useTickets(filters) {
+  return useQuery({ queryKey: ['tickets', filters], queryFn: () => tickets.list(filters) });
+}
+```
+
+No mezclar lógica de fetch con lógica de UI en el componente.
+
+### Descarga de archivos binarios
+
+Para descargas de Excel, PDF u otros binarios generados por el backend:
+
+```javascript
+const res = await fetch('/api/export', { method: 'POST', body: JSON.stringify(params) });
+const blob = await res.blob();
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url; a.download = 'reporte.xlsx'; a.click();
+URL.revokeObjectURL(url);
+```
+
+No usar query params con tokens para autenticar descargas; usar cookies de sesión. Revocar la URL del objeto después de la descarga.
+
+## Alternativa ligera: Vite + vanilla JS
+
+Para dashboards de monitoreo o interfaces simples que no necesitan React/Next.js:
+
+```text
+index.html           — Entry point
+js/
+  app.js             — Inicialización y orquestación
+  api.js             — Cliente HTTP
+  auth.js            — Sesión
+  state.js           — Estado de la app (objeto mutable o store simple)
+  render/            — Funciones de renderizado por sección
+css/
+```
+
+Usar Vite como bundler/dev server con ES modules nativos. Vitest + jsdom para tests unitarios del frontend. Este enfoque es adecuado para herramientas internas con baja complejidad de UI; no escala a aplicaciones con múltiples flujos de navegación.
+
+## Tiempo real en el frontend
+
+Para actualizaciones en vivo, leer [real-time.md](real-time.md) antes de implementar. Puntos clave para el frontend:
+
+- Crear un singleton de Socket.IO que se conecte al montar el AuthProvider y se desconecte al desmontar.
+- No abrir múltiples conexiones; reusar la instancia existente.
+- Limpiar listeners al desmontar componentes para evitar memory leaks y handlers duplicados.
+- Actualizar el estado local (react-query, context, useState) al recibir eventos; no recargar la página completa.
+- Para SSE, usar `EventSource` nativo con reconexión automática.
+
 ## Rendimiento y artefactos de referencia
 
 Para afirmar mejoras de rendimiento, medir antes/después sobre build productivo con condiciones comparables de dispositivo/red y varias corridas. Registrar métrica y mediana/dispersión; lazy loading o compresión sin medición no acredita mejora. Reservar dimensiones, evitar diferir contenido inicial relevante y verificar invalidación de imágenes mutables. La optimización no debe alterar calidad/contratos sin evidencia.

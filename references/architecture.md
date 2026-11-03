@@ -4,9 +4,17 @@ Para extender un repositorio existente, identificar primero [sus convenciones re
 
 ## Stack y límites
 
-Usar Next.js en `apps/web`, API Node.js en `apps/api` y contratos compartidos en `packages/contracts` si el tamaño justifica un monorepo. Preferir un monolito modular antes que microservicios innecesarios. Mantener reglas de negocio en servicios testeables; HTTP, persistencia y proveedores son adaptadores. La orquestación externa no debe duplicar reglas ni escribir tablas saltándose el dominio. En entornos orquestados con contenedores, desacoplar frontend y backend en servicios independientes dentro de una red interna y comunicar cliente con API mediante el patrón Same-Origin (rewrites en frontend hacia el DNS interno), manteniendo el backend aislado del tráfico directo de Internet (ver [operations.md](operations.md)).
+Usar Next.js en `apps/web`, API Node.js en `apps/api` y contratos compartidos en `packages/contracts` si el tamaño justifica un monorepo. En monorepos, usar npm workspaces para compartir scripts y dependencias; mantener lockfile único en la raíz. Preferir un monolito modular antes que microservicios innecesarios. Mantener reglas de negocio en servicios testeables; HTTP, persistencia y proveedores son adaptadores. La orquestación externa no debe duplicar reglas ni escribir tablas saltándose el dominio. En entornos orquestados con contenedores, desacoplar frontend y backend en servicios independientes dentro de una red interna y comunicar cliente con API mediante el patrón Same-Origin (rewrites en frontend hacia el DNS interno), manteniendo el backend aislado del tráfico directo de Internet (ver [operations.md](operations.md)).
 
 Elegir versiones mantenidas y compatibles consultando documentación oficial; fijar dependencias y conservar un lockfile. Reutilizar el gestor y framework Node existentes; para uno nuevo, escoger Express o Fastify según requisitos. No mezclar gestores ni instalar `latest` sin verificar compatibilidad. No fijar en esta skill versiones históricas.
+
+### Acceso a datos: driver directo u ORM
+
+- **Driver directo** (`pg`, `mysql2`, `mongodb`): control total de queries, sin abstracción intermedia. Preferir cuando las consultas son complejas, el equipo domina SQL o se necesita rendimiento ajustado.
+- **Prisma**: esquema declarativo, migraciones versionadas y tipado end-to-end. Preferir en proyectos TypeScript cuando la productividad y la seguridad de tipos importan más que el control granular de SQL. Usar singleton para el client (`new PrismaClient()` una sola vez); mapear errores de Prisma (P2002→409 duplicado, P2025→404 no encontrado) en el middleware de errores.
+- **Mongoose**: ODM para MongoDB con esquema, hooks, validación y populate. Usar en proyectos MongoDB existentes que ya lo adopten.
+
+No mezclar ORM y driver directo para la misma tabla/colección. En proyectos existentes, mantener el acceso a datos que ya use el repositorio.
 
 ## Elegir una base principal
 
@@ -36,7 +44,94 @@ Autorizar cada operación y objeto en el backend. Probar roles, propiedad, separ
 
 Elegir mecanismo de sesión según amenazas; para cookies configurar HttpOnly, Secure, SameSite y protección CSRF según flujo. En arquitecturas contenerizadas desacopladas, priorizar el patrón Same-Origin (reescrituras de proxy en frontend hacia el backend interno): esto reduce la necesidad de CORS hacia el navegador. Elegir SameSite según flujos de autenticación, OAuth/callback y enlaces externos; no imponer Strict universalmente ni considerar Same-Origin una defensa CSRF suficiente. Si la API se consume fuera de este proxy (ej. clientes móviles o integraciones directas), aplicar CORS estricto únicamente por orígenes autorizados explícitos. Usar consultas parametrizadas, validación de esquema y límites de tamaño/tasa. No devolver datos sensibles en errores, logs ni endpoints públicos. Separar secretos de servidor de variables públicas de Next.js.
 
+### Autenticación con revalidación en DB
+
+No confiar solo en los claims del JWT para roles y estado activo. Revalidar contra DB en cada request o al menos ante operaciones sensibles: el usuario puede haber sido desactivado o su rol cambiado después de emitir el token. Opcionalmente, incluir `session_id` y `token_version` en el payload para soportar revocación selectiva (logout de otros dispositivos, cambio de contraseña) sin necesitar una blacklist de tokens.
+
+### Autenticación en dos capas de middleware
+
+1. **Global, no bloqueante** (`attachAuthIfPresent`): decodifica el token si existe y lo inyecta en `req.user`; no bloquea si no hay token. Permite endpoints semi-públicos que ajustan la respuesta según si hay sesión.
+2. **Por ruta, bloqueante** (`requireAuth`, `requireRole`): corta con 401/403. Composición: `requireAuth` → `requireRole('ADMIN')`.
+
+### Protección CSRF en Same-Origin
+
+Cuando se usen cookies httpOnly con SameSite, añadir un header CSRF custom (por ejemplo `X-App-CSRF: 1`) requerido en mutaciones. El navegador lo envía automáticamente desde scripts del mismo origen; un atacante cross-site no puede inyectarlo. Verificar el header en el servidor antes de procesar la mutación.
+
+### Rate limiting diferenciado
+
+Aplicar límites escalonados según el costo de la operación:
+- **Global**: límite alto para tráfico general (ej. 300-1500 req/ventana).
+- **Endpoints costosos**: límite menor para exportaciones, búsquedas pesadas, importaciones (ej. 20-60 req/ventana).
+- **Autenticación**: límite estricto para login, OTP, registro (ej. 5-20 req/ventana más corta).
+
+### Validación de configuración para producción
+
+Implementar una función que valide la configuración al arranque y rechace combinaciones inseguras en producción: secretos débiles o placeholder, simuladores activos, cookies inseguras, datos demo habilitados. Separar APP_ENV (funcional: local/staging/production) de NODE_ENV (optimización de build/runtime).
+
+```javascript
+function productionViolations(config) {
+  const violations = [];
+  if (config.JWT_SECRET === 'changeme' || config.JWT_SECRET.length < 32)
+    violations.push('JWT_SECRET es débil o placeholder');
+  if (config.APP_ENV === 'production' && config.PROVIDER_MODE === 'mock')
+    violations.push('Simulador activo en producción');
+  return violations;
+}
+```
+
+### Autenticación machine-to-machine
+
+Para comunicación entre servicios propios, usar HMAC-SHA256 o esquemas similares en vez de compartir tokens de usuario. Leer [integrations.md](integrations.md) para el patrón completo con firmas, nonces anti-replay y scopes.
+
 En cargas de archivos, validar tamaño y tipo real, generar nombres seguros y evitar path traversal y ejecución. En llamadas a URLs aportadas por usuarios, revisar SSRF. Usar mínimo privilegio para DB y procesos; no montar sockets administrativos en aplicaciones comunes.
+
+## Organización de módulos
+
+### Variantes de estructura
+
+Elegir según complejidad; no imponer la más granular si el proyecto no la necesita:
+
+**A. Layered MVC** — proyectos simples o funcionalidad acotada:
+```text
+controllers/   routes/   models/   services/   middleware/   utils/
+```
+
+**B. Controller-Service-Validator** — cuando se usa Zod/Ajv y la validación merece su propio archivo:
+```text
+controllers/   services/   validators/   middlewares/   routes/   lib/   config/
+```
+
+**C. Modular por dominio** — proyectos con múltiples dominios independientes:
+```text
+modules/<dominio>/
+  <dominio>.routes.ts   <dominio>.service.ts   <dominio>.types.ts   helpers/
+integrations/<sistema>/
+  types.ts   http-client.ts   mock-client.ts   index.ts
+lib/   middleware/   workers/
+```
+
+La convención `<dominio>.<capa>.js` (ej. `auth.service.js`, `documents.controller.js`) identifica claramente responsabilidad y dominio. Usar naming consistente dentro del proyecto.
+
+### Composition root y DI manual
+
+Para testing sin framework de inyección: crear una factory `createApp(overrides = {})` que construya el grafo de dependencias, donde cada servicio es una factory que recibe sus colaboradores. En tests, pasar mocks como overrides. No usar singletons ocultos que impidan sustituir dependencias.
+
+### Máquinas de estado para ciclos de vida
+
+Cuando una entidad tiene un ciclo de vida con estados y transiciones definidas (documento, orden, ticket), modelar las transiciones explícitamente:
+
+```javascript
+const transitions = {
+  DRAFT: ['SENT', 'CANCELLED'],
+  SENT: ['PARTIALLY_SIGNED', 'REJECTED', 'EXPIRED'],
+  PARTIALLY_SIGNED: ['SIGNED', 'REJECTED', 'EXPIRED'],
+};
+function canTransition(from, to) {
+  return transitions[from]?.includes(to) ?? false;
+}
+```
+
+Validar transiciones en el servicio de dominio antes de persistir. No depender del frontend para impedir transiciones inválidas.
 
 ## Interfaz y contratos
 

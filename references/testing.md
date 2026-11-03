@@ -63,6 +63,31 @@ Preferir `node:test` con `node:assert/strict` para lógica pura, invariantes y c
 
 Vitest/Testing Library son apropiados cuando se necesitan transformaciones o entorno de componentes; Playwright cubre navegador real, no solo comprobación visual. `node:test` también puede ejecutar integración si conecta realmente HTTP/DB; un servidor fake no la convierte en integración de producción. No sacrificar cobertura para evitar dependencias.
 
+### Runners alternativos
+
+- **Vitest**: compatible con proyectos Vite/TypeScript; soporte nativo de ESM, mocks, coverage y watch mode. Adecuado tanto para backend como frontend con jsdom.
+- **Jest + ts-jest / Supertest**: ecosistema maduro para backend con TypeScript. Supertest para testing HTTP de Express sin levantar servidor.
+- **mongodb-memory-server**: instancia MongoDB en memoria para tests de integración rápidos. Complementa, no sustituye, pruebas contra el motor real en contenedor.
+
+### Shell testing con BATS
+
+Para scripts de infraestructura (entrypoints, recolectores de estado, healthchecks personalizados):
+
+```bash
+# tests/scripts/collector.bats
+@test "parsea salida de docker ps correctamente" {
+  run parse_docker_output "$FIXTURE_DIR/docker-ps.txt"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"available":true'* ]]
+}
+```
+
+Validar con ShellCheck antes de ejecutar. Mockear la salida de comandos del sistema, no los comandos mismos. BATS es apropiado para scripts que procesan datos de sistema; no sustituye tests de aplicación.
+
+### QA seed separado
+
+Separar datos de seed para testing/QA de los datos de seed para producción/desarrollo. El seed de QA puede incluir usuarios con roles específicos, entidades en estados diversos y datos de borde. No mezclar fixtures extensas con el seed mínimo de producción.
+
 Crear runners Compose para todas las capas, con browser/dependencias en la imagen E2E; propagar exit codes. Ejecutar los scripts de inicio y resolución de módulos dentro del runtime final sin bind mounts. Completar gates DC-01 a DC-09 de docker-compose.md. Guardar evidencia diferenciada de sintaxis, build, arranque, tests y persistencia.
 
 ## Fixtures, ejemplos y fuentes independientes

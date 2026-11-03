@@ -45,6 +45,52 @@ Vincular confirmaciones a la versión y al resumen exactos; cualquier edición r
 
 Medir latencia extremo a extremo: colas, batching, polling, retries y pausas se suman. Definir presupuesto y alertas sobre ese total; no alterar retardos acordados sin verificar su finalidad ni atribuir una demora a código sin evidencia.
 
+## Outbox pattern para entrega garantizada
+
+Cuando una operación de dominio debe producir un efecto externo (sincronización, notificación, webhook) con garantía de entrega:
+
+1. Persistir el evento en una tabla outbox dentro de la misma transacción que el cambio de dominio.
+2. Un worker dedicado procesa la cola con semántica at-least-once.
+3. Cada evento lleva un idempotency key congelado al crear; el worker lo usa para deduplicar en el destino.
+4. Backoff exponencial configurable (ej. `1,2,5,15,60` minutos) con clasificación de fallos:
+   - **RETRY**: error transitorio, reintentar con backoff.
+   - **CONFLICT**: el destino rechaza por inconsistencia; requiere reconciliación.
+   - **FAILED_REQUIRES_ACTION**: fallo permanente que necesita intervención manual.
+5. Respetar orden por entidad: no procesar evento N+1 hasta que N esté SYNCED para el mismo recurso.
+6. Lock optimista con `attemptCount` y `lockedAt` (detección de lock stale si el worker muere).
+7. Reconciliación: endpoint o proceso para resolver conflictos y eventos atascados.
+
+No implementar outbox para todo; solo cuando la consistencia eventual entre el commit local y el efecto externo sea un requisito real.
+
+## Caché con degradación segura (stale-while-revalidate)
+
+Para datos que se consultan frecuentemente y toleran brevedad de inconsistencia:
+
+```javascript
+async function getOrRefresh(key, ttl, fetcher) {
+  const cached = store.get(key);
+  if (cached && !isExpired(cached, ttl)) return cached.value;
+  if (inFlight.has(key)) return inFlight.get(key);  // deduplicar fetches concurrentes
+  const promise = fetcher().then(value => {
+    store.set(key, { value, fetchedAt: Date.now() });
+    inFlight.delete(key);
+    return value;
+  }).catch(err => {
+    inFlight.delete(key);
+    if (cached) return cached.value;  // servir stale si el refresh falla
+    throw err;
+  });
+  inFlight.set(key, promise);
+  return promise;
+}
+```
+
+- TTL por categoría: datos del sistema (corto), datos de configuración (medio), cálculos pesados (largo).
+- Deduplicar fetches concurrentes con promise compartida.
+- Si el refresh falla, servir el valor stale en vez de propagar el error al usuario.
+- `peek(key)` para leer sin disparar fetch (observabilidad).
+- `describe(key)` para metadatos de caché (edad, último error) en endpoints de salud.
+
 ## Pruebas de aceptación de recuperación
 
 - Caída antes y después del commit; resultado externo aplicado con respuesta perdida.

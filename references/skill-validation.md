@@ -67,7 +67,7 @@ La preparación automática de fixtures no equivale a evaluación realizada. Sin
 
 ## 4. CI de la propia skill
 
-[skill-ci.yml](../assets/skill-ci.yml) se copia a `.github/workflows/skill-validation.yml` en un repositorio cuya raíz contiene `fullstack-engineering/`. Si la estructura difiere, adaptar todas las rutas de comandos y artefactos. Este workflow valida la skill; `assets/ci-pipeline.yml` sigue siendo la plantilla de CI para las aplicaciones generadas.
+El workflow activo está en [.github/workflows/skill-validation.yml](../.github/workflows/skill-validation.yml) con rutas para la skill como raíz del repositorio. La plantilla [skill-ci.yml](../assets/skill-ci.yml) sirve para repositorios donde la skill vive en una subcarpeta `fullstack-engineering/`. Este workflow valida la skill; `assets/ci-pipeline.yml` sigue siendo la plantilla de CI para las aplicaciones generadas.
 
 - Matriz Windows/Linux con Node 22/24 para scripts y preparación.
 - Job Linux separado para build Docker, navegador, persistencia, backup y recuperación.
