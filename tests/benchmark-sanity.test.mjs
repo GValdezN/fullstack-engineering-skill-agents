@@ -1,31 +1,35 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, statSync, readFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { existsSync, statSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 
 describe('context-benchmark sanity', () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'skill-benchmark-'));
+  const reportPath = join(tempDir, 'context-benchmark.md');
+
+  after(() => rmSync(tempDir, { recursive: true, force: true }));
+
   it('benchmark script exists and is valid JS', () => {
     const scriptPath = join(root, 'scripts', 'context-benchmark.mjs');
     assert.ok(existsSync(scriptPath), 'scripts/context-benchmark.mjs missing');
     // Check it parses without error
-    execSync(`node --check "${scriptPath}"`);
+    execFileSync(process.execPath, ['--check', scriptPath]);
   });
 
   it('benchmark produces a non-empty report', () => {
-    const reportPath = join(root, 'reports', 'context-benchmark.md');
-    execSync(`node scripts/context-benchmark.mjs --output "${reportPath}"`, { cwd: root });
+    execFileSync(process.execPath, ['scripts/context-benchmark.mjs', '--output', reportPath], { cwd: root });
     assert.ok(existsSync(reportPath), 'report file missing after run');
     const stat = statSync(reportPath);
     assert.ok(stat.size > 500, `report too small: ${stat.size} bytes`);
   });
 
   it('report contains expected sections', () => {
-    const reportPath = join(root, 'reports', 'context-benchmark.md');
     const content = readFileSync(reportPath, 'utf8');
     assert.ok(content.includes('# Context Benchmark A/B/C'), 'missing title');
     assert.ok(content.includes('## Metodología'), 'missing methodology');
@@ -35,7 +39,6 @@ describe('context-benchmark sanity', () => {
   });
 
   it('report contains all task types', () => {
-    const reportPath = join(root, 'reports', 'context-benchmark.md');
     const content = readFileSync(reportPath, 'utf8');
     const tasks = [
       'existing-bug', 'function-change', 'module-change',

@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 /**
  * Context benchmark: measures proxy token load per task type across skill variants.
- * Usage: node scripts/context-benchmark.mjs [--output reports/context-benchmark.md]
+ * Usage: node scripts/context-benchmark.mjs [--output <path>]
  */
 
 import { execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { parseArgs } from 'node:util';
 
 const { values: args } = parseArgs({
   options: {
-    output: { type: 'string', default: 'reports/context-benchmark.md' },
+    output: { type: 'string', default: join(tmpdir(), 'fullstack-engineering-context-benchmark.md') },
     help:   { type: 'boolean', short: 'h', default: false },
   },
   strict: false,

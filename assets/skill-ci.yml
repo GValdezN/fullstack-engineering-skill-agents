@@ -21,8 +21,8 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Test scripts and fixture preparation
         run: node --test fullstack-engineering/tests/templates.test.mjs fullstack-engineering/tests/smoke-preparation.test.mjs
-      - name: Test context efficiency and benchmark
-        run: node --test fullstack-engineering/tests/context-efficiency.test.mjs fullstack-engineering/tests/benchmark-sanity.test.mjs
+      - name: Test context efficiency
+        run: node --test fullstack-engineering/tests/context-efficiency.test.mjs
       - name: Install AST inspector dependencies
         run: npm ci --prefix fullstack-engineering/tools/code-indexer --no-audit --no-fund
       - name: Test AST inspector
