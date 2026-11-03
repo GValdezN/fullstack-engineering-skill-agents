@@ -22,6 +22,8 @@ Determinar la unidad (función, módulo, integración, flujo transversal o aplic
 | Aplicación fullstack nueva | [architecture.md](references/architecture.md), [docker-compose.md](references/docker-compose.md), [testing.md](references/testing.md) |
 | Infraestructura / despliegue | [operations.md](references/operations.md), [docker-compose.md](references/docker-compose.md) |
 
+En codebases grandes o desconocidos (>50 archivos fuente), considerar el inspector AST antes de implementar. Leer [code-inspection.md](references/code-inspection.md) para decidir si aporta valor y cómo usarlo. El inspector es opcional: si no está instalado, el agente trabaja con búsqueda de texto y lectura directa.
+
 Inferir la unidad desde el código cuando el usuario no la nombre. Ajustar el esfuerzo a los límites afectados: una función pura no requiere frontend, DB ni Docker; un módulo con persistencia necesita comprobarla realmente; una integración requiere probar sus extremos. Usar [engineering-change.md](assets/engineering-change.md) para fichas de cambios complejos o de varias sesiones; para tareas simples basta el plan/resumen.
 
 ## Reglas innegociables
@@ -40,7 +42,7 @@ Inferir la unidad desde el código cuando el usuario no la nombre. Ajustar el es
 
 El proceso detallado está en [change-engineering.md](references/change-engineering.md). Resumen del ciclo:
 
-1. **Inspeccionar** — leer repo, estado Git, convenciones, consumidores y fijar criterios de aceptación observables.
+1. **Inspeccionar** — leer repo, estado Git, convenciones, consumidores y fijar criterios de aceptación observables. En proyectos amplios, usar el inspector AST (`scan → find → symbol`) para localizar símbolos y límites de módulo antes de leer archivos completos.
 2. **Diseñar** — definir contratos, estados, fuente de verdad y plan de entregas verticales. Consultar las referencias según la tabla.
 3. **Implementar** — persistencia, dominio, API y UI coherentes. Validar config al arranque; error handling centralizado; completar todos los estados.
 4. **Probar** — ejecutar la escalera de pruebas aplicable: estática → unitarias → módulo → integración → E2E → regresión.
@@ -50,8 +52,6 @@ El proceso detallado está en [change-engineering.md](references/change-engineer
 ## Mantener y evaluar esta skill
 
 Al cambiar plantillas o verificadores, leer [skill-validation.md](references/skill-validation.md). Ejecutar regresiones de scripts y preparación; para cambios de Docker/DB usar la app sintética con `node scripts/run-smoke.mjs`. Usar `assets/skill-ci.yml` para CI de esta skill en Windows/Linux.
-
-Si el proyecto es grande o ambiguo, considerar el inspector AST opcional descrito en [code-inspection.md](references/code-inspection.md).
 
 ## Uso en Claude Code
 

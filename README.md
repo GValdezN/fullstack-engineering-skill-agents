@@ -29,7 +29,7 @@ No está pensada para preguntas conceptuales sin cambios de código.
 
 ## Instalación
 
-Clona o descarga este repositorio. Desde su raíz, copia **`SKILL.md`, `references/`, `assets/` y `scripts/`** a una carpeta llamada `fullstack-engineering` en la ubicación de tu agente. Mantén esas cuatro piezas juntas: la skill enlaza guías, plantillas y verificadores mediante rutas relativas.
+Clona o descarga este repositorio. Desde su raíz, copia **`SKILL.md`, `references/`, `assets/` y `scripts/`** a una carpeta llamada `fullstack-engineering` en la ubicación de tu agente. Mantén esas cuatro piezas juntas: la skill enlaza guías, plantillas y verificadores mediante rutas relativas. Opcionalmente, copia también `tools/` si quieres usar el inspector AST (requiere `npm ci --prefix tools/code-indexer` después de copiar).
 
 | Agente | En un proyecto | Para tu usuario |
 | --- | --- | --- |
@@ -73,11 +73,56 @@ Para cambios en un proyecto existente, sigue sus convenciones y prueba los lími
 | [`assets/`](assets/) | Plantillas y fichas de entrega y verificación. |
 | [`scripts/`](scripts/) | Verificadores y preparación de evaluaciones. |
 | [`tests/`](tests/) | Pruebas de plantillas y una app sintética para smoke tests. |
+| [`tools/code-indexer/`](tools/code-indexer/) | Inspector AST opcional para navegar codebases grandes. |
+
+## Inspector de código (opcional)
+
+El directorio `tools/code-indexer/` contiene un CLI que usa [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) para extraer la estructura sintáctica de proyectos JS/TS/TSX sin ejecutar su código. Es útil para localizar funciones, clases y exports en codebases amplios antes de implementar cambios.
+
+### Requisitos
+
+- Node.js 22+
+- Compilador nativo para Tree-sitter (se compila automáticamente al instalar)
+
+### Instalación
+
+```bash
+npm ci --prefix tools/code-indexer
+```
+
+### Uso
+
+```bash
+# Escanear un proyecto y ver su estructura
+node tools/code-indexer/cli.mjs scan --root /ruta/al/proyecto --format summary
+
+# Buscar un símbolo por nombre
+node tools/code-indexer/cli.mjs find --root /ruta/al/proyecto --name calculatePrice
+
+# Leer el código de un símbolo con contexto
+node tools/code-indexer/cli.mjs symbol --root /ruta/al/proyecto --file src/services/pricing.ts --name calculatePrice --context 5
+```
+
+### Fallback
+
+La skill funciona sin el inspector. Si Tree-sitter no está instalado, el agente usa búsqueda de texto y lectura directa. Ver [code-inspection.md](references/code-inspection.md) para más detalles.
+
+### Seguridad
+
+- Solo lee archivos; nunca ejecuta código del proyecto inspeccionado.
+- Excluye `.env*`, claves privadas, `node_modules` y archivos binarios.
+- No envía datos al exterior.
 
 Si modificas la skill, puedes ejecutar sus pruebas locales con Node.js:
 
 ```bash
 node --test tests/templates.test.mjs tests/smoke-preparation.test.mjs
+```
+
+Si tienes el inspector instalado, puedes ejecutar sus tests:
+
+```bash
+node --test tools/code-indexer/test/discover.test.mjs tools/code-indexer/test/parse.test.mjs tools/code-indexer/test/extract.test.mjs tools/code-indexer/test/cache.test.mjs tools/code-indexer/test/cli.test.mjs
 ```
 
 Las comprobaciones de Docker requieren Docker y Compose disponibles en el entorno.
