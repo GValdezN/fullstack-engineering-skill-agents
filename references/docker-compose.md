@@ -1,5 +1,14 @@
 # Docker Compose: contrato de entrega obligatorio
 
+## Perfil de entrega: prototipo o producción
+
+Cuando el usuario inicia una aplicación nueva, determinar el perfil antes de implementar:
+
+- **Prototipo:** el usuario quiere probar una idea, explorar una API o validar un concepto. Entregar Compose funcional con web, API y base, un Dockerfile por servicio, `.env.example`, migraciones y un README de arranque. Ejecutar verificación estática y el flujo principal (navegador → API → DB). Las cuatro capas de pruebas, fixtures extensas, backup/restauración, recuperación de DB y runners QA independientes son opcionales. El prototipo NO puede declararse listo para producción.
+- **Producción:** el usuario necesita software desplegable. Aplicar el proceso completo: cuatro capas de pruebas, verificación de persistencia, recreación, recuperación, backup y runners QA. Cumplir todos los gates de la sección 7 de esta guía.
+
+Si el usuario no lo indica, preguntar una vez: "¿Es un prototipo para explorar la idea o una aplicación con destino a producción?". Usar el perfil para calibrar el esfuerzo, no para reducir la calidad del código. Un prototipo sigue usando builds multi-etapa, healthchecks, migraciones versionadas y same-origin; lo que se reduce es la amplitud de verificación y la ceremonia de entrega.
+
 ## Contenido
 
 - 1. Resultado esperado
