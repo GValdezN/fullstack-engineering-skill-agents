@@ -14,6 +14,15 @@ import {
 } from './src/cache.mjs';
 import { formatSummary, formatJSON, formatFindResults } from './src/output.mjs';
 
+function positiveLimit(value, flag) {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return parsed;
+}
+
 function usage() {
   console.log(`code-indexer — AST-based code structure indexer
 
@@ -25,9 +34,9 @@ Commands:
 
 Options (scan):
   --root <path>           Project root (required)
-  --format summary|json   Output format (default: summary)
-  --max-symbols <n>       Limit symbols in summary
-  --max-chars <n>         Limit total output characters
+  --format summary|json   Output format (default: summary; large JSON requires --output)
+  --max-symbols <n>       Limit symbols in summary (default: 60)
+  --max-chars <n>         Limit summary body characters (default: 6000)
   --no-cache              Skip cache entirely
   --cache-max-size <mb>   Max cache size in MB (default: 50)
   --output <file>         Write output to file instead of stdout
@@ -35,6 +44,8 @@ Options (scan):
 Options (find):
   --root <path>           Project root (required)
   --name <symbol>         Symbol name to search for (required)
+  --max-results <n>       Limit matches shown (default: 60)
+  --max-chars <n>         Limit result body characters (default: 6000)
 
 Options (symbol):
   --root <path>           Project root (required)
@@ -161,10 +172,15 @@ async function cmdScan(args) {
   let result;
   if (values.format === 'json') {
     result = formatJSON(index);
+    if (result.length > 6000 && !values.output) {
+      console.error('JSON output exceeds 6000 characters; use --output <file> to save the full index.');
+      process.exitCode = 2;
+      return;
+    }
   } else {
     result = formatSummary(index, {
-      maxSymbols: values['max-symbols'] ? Number(values['max-symbols']) : undefined,
-      maxChars: values['max-chars'] ? Number(values['max-chars']) : undefined,
+      maxSymbols: positiveLimit(values['max-symbols'], '--max-symbols'),
+      maxChars: positiveLimit(values['max-chars'], '--max-chars'),
     });
   }
 
@@ -182,6 +198,8 @@ async function cmdFind(args) {
     options: {
       root: { type: 'string' },
       name: { type: 'string' },
+      'max-results': { type: 'string' },
+      'max-chars': { type: 'string' },
     },
     strict: true,
   });
@@ -194,7 +212,10 @@ async function cmdFind(args) {
   const root = resolve(values.root);
   const index = await buildIndex(root);
   const results = index.findByName(values.name);
-  console.log(formatFindResults(results));
+  console.log(formatFindResults(results, {
+    maxResults: positiveLimit(values['max-results'], '--max-results'),
+    maxChars: positiveLimit(values['max-chars'], '--max-chars'),
+  }));
 }
 
 async function cmdSymbol(args) {

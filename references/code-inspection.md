@@ -61,9 +61,9 @@ node tools/code-indexer/cli.mjs scan --root /ruta/al/proyecto --format summary -
 
 Opciones:
 - `--root <path>` — raíz del proyecto (requerido)
-- `--format summary|json` — formato de salida (default: summary)
-- `--max-symbols <n>` — limitar número de símbolos en summary
-- `--max-chars <n>` — limitar caracteres totales de salida
+- `--format summary|json` — formato de salida (default: summary); JSON superior a 6000 caracteres requiere `--output`
+- `--max-symbols <n>` — limitar número de símbolos en summary (predeterminado: 60)
+- `--max-chars <n>` — limitar caracteres del cuerpo del summary (predeterminado: 6000; el estado final se añade después)
 - `--no-cache` — no usar caché
 - `--output <file>` — escribir a archivo en vez de stdout
 
@@ -75,7 +75,7 @@ src/services/pricing.ts
   calculateTax(amount)            L80–92  local
 src/components/ProductForm.tsx
   ProductForm({ onSubmit })       L12–104 exported  component
-TRUNCATED=false SYMBOLS_SHOWN=387
+TRUNCATED=true SYMBOLS_SHOWN=60
 ```
 
 ### find — Buscar un símbolo por nombre
@@ -87,6 +87,8 @@ node tools/code-indexer/cli.mjs find --root /ruta/al/proyecto --name calculatePr
 Opciones:
 - `--root <path>` — raíz del proyecto (requerido)
 - `--name <symbol>` — nombre del símbolo a buscar (requerido)
+- `--max-results <n>` — limitar coincidencias mostradas (predeterminado: 60)
+- `--max-chars <n>` — limitar caracteres del cuerpo (predeterminado: 6000)
 
 Devuelve coincidencias exactas primero, luego parciales, con archivo, línea, tipo y estado de exportación.
 

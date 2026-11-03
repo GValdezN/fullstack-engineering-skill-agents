@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { discoverFiles } from '../src/discover.mjs';
 
@@ -47,5 +49,38 @@ describe('discoverFiles', () => {
     const paths = files.map(f => f.relativePath);
     const sorted = [...paths].sort();
     assert.deepEqual(paths, sorted);
+  });
+
+  it('rejects sibling-directory symlinks whose names share the root prefix', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'code-indexer-discover-'));
+    const root = join(base, 'project');
+    const external = join(base, 'project-external');
+    try {
+      await mkdir(root);
+      await mkdir(external);
+      await writeFile(join(root, 'inside.js'), 'export function inside() {}');
+      await writeFile(join(external, 'outside.js'), 'export function outside() {}');
+      await symlink(external, join(root, 'linked-external'), process.platform === 'win32' ? 'junction' : 'dir');
+
+      const paths = (await discoverFiles(root)).map(file => file.relativePath);
+      assert.deepEqual(paths, ['inside.js']);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it('does not revisit directories through internal symlink cycles', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'code-indexer-cycle-'));
+    const root = join(base, 'project');
+    try {
+      await mkdir(join(root, 'src'), { recursive: true });
+      await writeFile(join(root, 'src', 'inside.js'), 'export function inside() {}');
+      await symlink(root, join(root, 'src', 'back'), process.platform === 'win32' ? 'junction' : 'dir');
+
+      const paths = (await discoverFiles(root)).map(file => file.relativePath);
+      assert.deepEqual(paths, ['src/inside.js']);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 });

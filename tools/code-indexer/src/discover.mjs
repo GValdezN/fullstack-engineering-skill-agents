@@ -1,5 +1,5 @@
 import { readdir, stat, readFile, realpath } from 'node:fs/promises';
-import { join, relative, extname, resolve } from 'node:path';
+import { join, relative, extname, resolve, isAbsolute, sep } from 'node:path';
 
 const ALWAYS_SKIP_DIRS = new Set([
   '.git', 'node_modules', '.next', 'dist', 'build', 'coverage',
@@ -63,6 +63,7 @@ export async function discoverFiles(root, options = {}) {
   const resolvedRoot = resolve(root);
   const realRoot = await realpath(resolvedRoot);
   const results = [];
+  const visitedDirs = new Set();
 
   let gitignoreRules = [];
   try {
@@ -73,6 +74,10 @@ export async function discoverFiles(root, options = {}) {
   }
 
   async function walk(dir) {
+    const realDir = await realpath(dir);
+    if (visitedDirs.has(realDir)) return;
+    visitedDirs.add(realDir);
+
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
@@ -87,7 +92,8 @@ export async function discoverFiles(root, options = {}) {
       if (entry.isSymbolicLink()) {
         try {
           const realTarget = await realpath(fullPath);
-          if (!realTarget.startsWith(realRoot)) continue;
+          const targetRelative = relative(realRoot, realTarget);
+          if (targetRelative === '..' || targetRelative.startsWith(`..${sep}`) || isAbsolute(targetRelative)) continue;
         } catch {
           continue;
         }

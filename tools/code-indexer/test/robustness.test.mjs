@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir, writeFile, rm, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm, unlink } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
@@ -310,8 +310,14 @@ describe('Output limits', () => {
       }
       await writeFile(join(dir, 'many.js'), lines.join('\n'), 'utf8');
 
-      const { stdout } = await run('scan', '--root', dir, '--format', 'json', '--no-cache');
-      const parsed = JSON.parse(stdout);
+      await assert.rejects(
+        run('scan', '--root', dir, '--format', 'json', '--no-cache'),
+        error => error.code === 2 && /requires --output|use --output/.test(error.stderr),
+      );
+
+      const outputPath = join(dir, 'index.json');
+      await run('scan', '--root', dir, '--format', 'json', '--output', outputPath, '--no-cache');
+      const parsed = JSON.parse(await readFile(outputPath, 'utf8'));
       assert.ok(parsed.files, 'should have files');
       assert.ok(parsed.stats.symbols >= 100);
     } finally {

@@ -1,7 +1,7 @@
 # Context Benchmark A/B/C
 
 **Fecha:** 2026-11-03
-**Plataforma:** win32 x64, Node v22.14.0
+**Plataforma:** linux x64, Node v22.17.0
 
 ## Variantes
 
@@ -123,7 +123,7 @@ Reducción A→C: **-51%** (15.1 KB → 7.4 KB)
 1. **SKILL.md reducido un 51%**: de 15.1 KB a 7.4 KB. Esto reduce el contexto obligatorio en cada interacción.
 2. **Contexto promedio por tarea reducido un 45% (B) y 27% (C)**: las variantes optimizadas cargan solo las referencias pertinentes.
 3. **Variant A carga más referencias por tarea** porque SKILL.md era monolítico y referenciaba guías sin discriminar por tipo — el agente tenía que leer instrucciones irrelevantes para su tarea actual.
-4. **El overhead del AST (Variante C)** es modesto (~16.6 KB para 100 archivos) y solo aplica en tareas que se benefician de inspección estructural. El ahorro de contexto de SKILL.md compacto más que compensa este overhead.
+4. **El overhead del AST (Variante C)** es una hipótesis de ~16.6 KB para 100 archivos. La variante C supera a B en este proxy; falta medir cuánto código evita leer el inspector durante una tarea real.
 5. **Tareas simples** (project-conventions, infrastructure) se benefician más del routing selectivo porque cargan menos referencias.
 6. **Tareas complejas** (new-app, external-integration) cargan más referencias en ambas variantes, pero la B/C evita cargar las que no aplican.
 
@@ -132,5 +132,6 @@ Reducción A→C: **-51%** (15.1 KB → 7.4 KB)
 - Esta métrica es un **proxy de tokens**, no una medición real. Los tokens reales dependen del tokenizador del modelo, la proporción código/prosa, y la longitud de la conversación.
 - **No mide calidad**: un agente con menos contexto puede necesitar más iteraciones (más llamadas a herramientas, más contexto acumulado). La reducción de contexto inicial no garantiza menos tokens totales.
 - **El overhead AST es una estimación** basada en el fixture de 4 archivos extrapolado a 100. Proyectos reales varían en densidad de símbolos.
+- **El límite actual del resumen** es 60 símbolos y 6000 caracteres de cuerpo. La estimación AST de este informe proviene de una versión anterior sin ese límite y no representa la salida actual ni los tokens totales de un agente.
 - **Prompt caching** (Anthropic, OpenAI) puede amortizar el costo de SKILL.md en conversaciones largas. El ahorro real depende de la tasa de cache hit.
 - **La variante A no existió con las mismas referencias**: tras la integración de patrones (commit 92acdf7), las referencias crecieron. La comparación usa las referencias que existían en cada commit.

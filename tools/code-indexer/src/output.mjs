@@ -1,5 +1,5 @@
 export function formatSummary(index, options = {}) {
-  const { maxSymbols = Infinity, maxChars = Infinity } = options;
+  const { maxSymbols = 60, maxChars = 6000 } = options;
   const stats = index.stats();
   const cs = index.cacheStats();
   const lines = [];
@@ -56,15 +56,22 @@ export function formatJSON(index) {
   return JSON.stringify(index.toJSON(), null, 2);
 }
 
-export function formatFindResults(results) {
+export function formatFindResults(results, options = {}) {
   if (!results.length) return 'No symbols found.';
 
+  const { maxResults = 60, maxChars = 6000 } = options;
   const lines = [`Found ${results.length} symbol(s):\n`];
+  let shown = 0;
   for (const sym of results) {
+    if (shown >= maxResults) break;
     const range = `L${sym.startLine}–${sym.endLine}`;
     const exp = sym.exported ? 'exported' : 'local';
     const params = sym.params ? `(${sym.params.join(', ')})` : '';
-    lines.push(`  ${sym.file}  ${sym.name}${params}  ${range}  ${sym.kind}  ${exp}`);
+    const line = `  ${sym.file}  ${sym.name}${params}  ${range}  ${sym.kind}  ${exp}`;
+    if (lines.join('\n').length + 1 + line.length > maxChars) break;
+    lines.push(line);
+    shown++;
   }
+  lines.push(`TRUNCATED=${shown < results.length} RESULTS_SHOWN=${shown}`);
   return lines.join('\n');
 }
